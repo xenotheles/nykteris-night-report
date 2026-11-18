@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/nykteris-logo-dark.svg">
+    <img src="docs/logo/nykteris-logo.svg" alt="Nykteris" width="420">
+  </picture>
+</p>
+
 # Nykteris
 
 A night report for astrophotography sessions captured with Ekos/KStars or N.I.N.A. Point it at a night's lights
