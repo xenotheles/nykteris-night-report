@@ -214,12 +214,15 @@ def classify(night: Night, th: Thresholds) -> dict[tuple, Baseline]:
                     previous = [frames[j].metrics.get("fwhm_px") for j in range(max(0, idx - 3), idx)]
                     previous = [n for n in previous if n is not None and np.isfinite(n)]
                     jump = bool(previous) and fwhm > 1.15 * float(np.median(previous)) and not trend
-                    if (dtemp is not None and abs(dtemp) >= th.focus_temp_delta_c and not jump) or trend:
+                    temp_moved = dtemp is not None and abs(dtemp) >= th.focus_temp_delta_c
+                    if temp_moved or trend:
                         bits = [f"FWHM {rel_fwhm:.2f}x the median{fwhm_as}, stars round"]
                         if dtemp is not None:
                             bits.append(f"temperature {dtemp:+.1f} C since the last refocus")
                         if trend:
                             bits.append(f"FWHM rising over the last {k + 1} subs")
+                        if jump:
+                            bits.append("the last step was sudden, so seeing may add to it")
                         causes.append(("focus", "high" if (trend and dtemp is not None and abs(dtemp) >= th.focus_temp_delta_c) else "medium",
                                        "; ".join(bits) + "."))
                     elif g_rms is None or not guide_bad:

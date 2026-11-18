@@ -52,7 +52,7 @@ footer { margin-top: 48px; color: var(--muted); font-size: .8rem; }
 <body>
 <main>
 <h1>Night report{% if objects %}: {{ objects | join(", ") }}{% endif %}</h1>
-<p class="sub">{{ date }}, {{ start }} to {{ end }} local time (UTC{{ "%+g" | format(utc_offset) }}). Filters: {{ filters }}.</p>
+<p class="sub">{{ date }}, {{ start }} to {{ end }} local time (UTC{{ "%+g" | format(utc_offset) }}). Filters: {{ filters }}.{% if capture_software %} Captured with {{ capture_software }}.{% endif %}</p>
 
 <div class="stats">
   <div class="stat"><b>{{ n_frames }}</b><span>subs</span></div>
@@ -102,13 +102,13 @@ footer { margin-top: 48px; color: var(--muted); font-size: .8rem; }
 <details>
 <summary>Show all {{ n_frames }} subs with their measurements</summary>
 <div class="tablewrap"><table>
-<tr><th>#</th><th>Time</th><th>Filter</th><th>Exp</th><th>Stars</th><th>FWHM "</th><th>FWHM px</th><th>Ecc</th><th>Bkg</th><th>Guide RMS "</th><th>Alt</th><th>Temp</th><th>Ekos HFR</th><th>Verdict</th></tr>
+<tr><th>#</th><th>Time</th><th>Filter</th><th>Exp</th><th>Stars</th><th>FWHM "</th><th>FWHM px</th><th>Ecc</th><th>Bkg</th><th>Guide RMS "</th><th>Alt</th><th>Temp</th><th>{{ capture_software or 'Capture' }} HFR</th><th>Verdict</th></tr>
 {% for r in rows %}
 <tr>
   <td class="num">{{ r.n }}</td><td class="num">{{ r.time }}</td><td>{{ r.filter }}</td><td class="num">{{ r.exp }}</td>
   <td class="num">{{ r.stars }}</td><td class="num">{{ r.fwhm }}</td><td class="num">{{ r.fwhm_px }}</td><td class="num">{{ r.ecc }}</td>
   <td class="num">{{ r.bg }}</td><td class="num">{{ r.guide }}</td><td class="num">{{ r.alt }}</td><td class="num">{{ r.temp }}</td>
-  <td class="num">{{ r.ekos_hfr }}</td>
+  <td class="num">{{ r.cap_hfr }}</td>
   <td class="v-{{ r.verdict }}"><span class="dot" style="background: {{ r.color }}"></span>{{ r.verdict }}{% if r.verdict != "ok" %}: {{ r.cause }}{% endif %}</td>
 </tr>
 {% endfor %}
@@ -118,10 +118,12 @@ footer { margin-top: 48px; color: var(--muted); font-size: .8rem; }
 <h2>Inputs and method</h2>
 <ul class="notes">
   <li>Lights: <code>{{ inputs.lights }}</code></li>
-  <li>Ekos .analyze: {% if inputs.analyze %}{% for p in inputs.analyze %}<code>{{ p }}</code> {% endfor %}{% else %}<span class="muted">none (FITS headers only)</span>{% endif %}</li>
+  {% if inputs.analyze or not inputs.nina %}<li>Ekos .analyze: {% if inputs.analyze %}{% for p in inputs.analyze %}<code>{{ p }}</code> {% endfor %}{% else %}<span class="muted">none</span>{% endif %}</li>{% endif %}
+  {% if inputs.nina %}<li>NINA image metadata: {% for p in inputs.nina %}<code>{{ p }}</code> {% endfor %}</li>{% endif %}
+  {% if inputs.af_reports %}<li>NINA autofocus reports: {{ inputs.af_reports | length }}</li>{% endif %}
   <li>Guide log: {% if inputs.guide %}{% for p in inputs.guide %}<code>{{ p }}</code> {% endfor %}{% else %}<span class="muted">none</span>{% endif %}{% if guide_source %} (guide RMS taken from the {{ guide_source }}){% endif %}</li>
   <li>Local time offset: UTC{{ "%+g" | format(utc_offset) }}, {{ offset_source }}.</li>
-  <li>Each sub is compared with the median of its group (same filter, exposure and binning). FWHM is twice the median half-flux radius. Eccentricity is only judged when FWHM is at least {{ thresholds.eccentricity_min_fwhm_px }} px, because undersampled stars look elongated on good nights.</li>
+  <li>Each sub is compared with the median of its group (same filter, exposure and binning). FWHM is twice the median half-flux radius. The capture software's own HFR is shown next to it as a cross-check. Eccentricity is only judged when FWHM is at least {{ thresholds.eccentricity_min_fwhm_px }} px, because undersampled stars look elongated on good nights.</li>
   <li>Thresholds are provisional. Override them with <code>--config</code>; print the defaults with <code>nykteris thresholds</code>.</li>
   {% for n in notes %}<li>{{ n }}</li>{% endfor %}
 </ul>

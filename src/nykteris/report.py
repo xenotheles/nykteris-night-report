@@ -156,7 +156,7 @@ def build_context(night: Night) -> dict:
             "guide": _fmt(c.get("guide_rms"), 2),
             "alt": _fmt(c.get("altitude"), 0),
             "temp": _fmt(c.get("temperature"), 1),
-            "ekos_hfr": _fmt(c.get("ekos_hfr"), 2),
+            "cap_hfr": _fmt(c.get("cap_hfr"), 2),
             "verdict": f.verdict,
             "cause": _primary(f),
             "color": COLORS[_primary(f)],
@@ -190,7 +190,10 @@ def build_context(night: Night) -> dict:
             "lights": str(inputs.lights) if inputs else "",
             "analyze": [str(p) for p in inputs.analyze] if inputs else [],
             "guide": [str(p) for p in inputs.guide_logs] if inputs else [],
+            "nina": [str(p) for p in inputs.nina_metadata] if inputs else [],
+            "af_reports": [str(p) for p in inputs.af_reports] if inputs else [],
         },
+        "capture_software": night.capture_software,
         "guide_source": next((f.ctx.get("guide_source") for f in frames if f.ctx.get("guide_source")), None),
         "thresholds": asdict(th) if th else {},
         "n_autofocus": len(night.autofocus),
@@ -206,7 +209,7 @@ def render_html(night: Night) -> str:
 def write_csv(night: Night, path: Path) -> None:
     cols = ["file", "date_obs_utc", "filter", "exptime", "stars", "fwhm_px", "hfr_px", "eccentricity",
             "ecc_coherence", "background", "noise", "guide_rms", "guide_peak", "altitude", "pier_side",
-            "temperature", "ekos_hfr", "verdict", "causes"]
+            "temperature", "cap_hfr", "verdict", "causes"]
     with open(path, "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(cols)
@@ -217,7 +220,7 @@ def write_csv(night: Night, path: Path) -> None:
                 m.get("stars"), _fmt(m.get("fwhm_px"), 3), _fmt(m.get("hfr_px"), 3), _fmt(m.get("eccentricity"), 3),
                 _fmt(m.get("ecc_coherence"), 3), _fmt(m.get("background"), 1), _fmt(m.get("noise"), 2),
                 _fmt(c.get("guide_rms"), 3), _fmt(c.get("guide_peak"), 3), _fmt(c.get("altitude"), 2),
-                c.get("pier_side") or "", _fmt(c.get("temperature"), 2), _fmt(c.get("ekos_hfr"), 3),
+                c.get("pier_side") or "", _fmt(c.get("temperature"), 2), _fmt(c.get("cap_hfr"), 3),
                 f.verdict, ";".join(x["cause"] for x in f.causes),
             ])
 

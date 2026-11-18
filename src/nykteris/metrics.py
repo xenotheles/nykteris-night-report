@@ -27,6 +27,8 @@ import numpy as np
 import sep
 from astropy.io import fits
 
+from . import xisf
+
 METRICS_VERSION = 1
 
 sep.set_extract_pixstack(3_000_000)
@@ -34,12 +36,20 @@ sep.set_sub_object_limit(4096)
 
 
 def _load(path: Path) -> np.ndarray:
+    if path.suffix.lower() == ".xisf":
+        data = np.asarray(xisf.read_data(path), dtype=np.float64)
+        bayer = xisf.read_header(path).get("BAYERPAT")
+        return _prepare(data, bayer)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         with fits.open(path, memmap=False) as hdul:
             hdu = hdul[0] if hdul[0].data is not None else hdul[1]
             data = np.asarray(hdu.data, dtype=np.float64)
             bayer = hdu.header.get("BAYERPAT")
+    return _prepare(data, bayer)
+
+
+def _prepare(data: np.ndarray, bayer) -> np.ndarray:
     if data.ndim == 3:
         data = data.mean(axis=0) if data.shape[0] <= 4 else data[0]
     if bayer:

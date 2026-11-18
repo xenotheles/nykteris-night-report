@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "nykteris"
 version = "0.1.0"
-description = "A night report for Ekos/KStars astrophotography sessions: flags bad subs and explains why."
+description = "A night report for Ekos/KStars and N.I.N.A. astrophotography sessions: flags bad subs and explains why."
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
@@ -19,6 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+xisf = ["lz4>=4", "zstandard>=0.21"]
 test = ["pytest>=7"]
 
 [project.scripts]
@@ -32,3 +33,4 @@ nykteris = ["templates/*.j2"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]

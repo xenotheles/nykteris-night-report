@@ -1,8 +1,10 @@
 # Nykteris
 
-A night report for Ekos/KStars astrophotography sessions. Point it at a night's lights folder, the matching
-Ekos `.analyze` file and, optionally, the guide log. It writes one HTML page that flags bad subs and gives a likely
-cause for each: clouds, guiding, seeing, focus drift, low altitude, trails or the meridian flip.
+A night report for astrophotography sessions captured with Ekos/KStars or N.I.N.A. Point it at a night's lights
+folder (FITS or XISF). It picks up what the capture software recorded next to them: the Ekos `.analyze` file, or
+N.I.N.A.'s Session Metadata files and autofocus reports, plus the guide log (PHD2 or the Ekos internal guider). It
+writes one HTML page that flags bad subs and gives a likely cause for each: clouds, guiding, seeing, focus drift,
+low altitude, trails or the meridian flip. It runs on Linux, macOS and Windows.
 
 It does not stack, weight or delete anything. Culling tools already exist (Siril, ASTAP, PixInsight); Nykteris is
 about explaining *why* subs went bad, using what Ekos already records.
@@ -12,10 +14,12 @@ about explaining *why* subs went bad, using what Ekos already records.
 Python 3.10 or newer, on Linux, macOS or Windows.
 
 ```sh
-pipx install git+https://github.com/xenotheles/nykteris-night-report
+pipx install "nykteris[xisf] @ git+https://github.com/xenotheles/nykteris-night-report"
 # or, from a clone:
-pip install -e ".[test]"
+pip install -e ".[test,xisf]"
 ```
+
+The `xisf` extra adds LZ4 and Zstandard for compressed XISF files. Uncompressed and zlib-compressed XISF work without it.
 
 ## Use
 
@@ -42,6 +46,31 @@ Outputs, next to the report:
 `--move-rejects` moves rejected subs into a `rejected/` folder beside them. Nothing is ever deleted.
 Measurements are cached in `.nykteris-cache.json`, so a rerun with different thresholds is fast.
 
+### N.I.N.A.
+
+```powershell
+nykteris report "C:\Users\me\Documents\N.I.N.A\2026-11-18\LIGHT" `
+    --guide-log "C:\Users\me\Documents\PHD2\PHD2_GuideLog_2026-11-18_204827.txt" `
+    --af-reports "$env:LOCALAPPDATA\NINA\AutoFocus"
+```
+
+What N.I.N.A. gives Nykteris, from most to least useful:
+
+- **Image headers** (always): `DATE-OBS` and `DATE-LOC` (so the local time offset is known), `PIERSIDE`, `CENTALT`,
+  `AIRMASS`, `FOCPOS`/`FOCTEMP`, `XPIXSZ` and `FOCALLEN`. This alone covers clouds, seeing, focus, altitude,
+  trails and flips.
+- **Session Metadata plugin** (recommended): `ImageMetaData.json` or `.csv` next to the images adds the guiding
+  RMS per sub, N.I.N.A.'s own HFR and star count, and the focuser temperature. Without a guide log, guiding faults
+  can then still be told apart from flexure. Found automatically in the lights folder.
+- **Autofocus reports**: `%LOCALAPPDATA%\NINA\AutoFocus\*.json` mark when focus was reset and at what temperature.
+  Point `--af-reports` at the folder; reports outside the night are ignored.
+- **PHD2 guide log**: per-exposure RMS, peak error and lost-star events. Usually in `Documents\PHD2`.
+
+N.I.N.A. does not keep a session event log like Ekos' `.analyze`, so meridian flips are detected from the pier side
+changing between subs.
+
+### Ekos
+
 Where Ekos keeps its files on Linux (StellarMate and Astroberry are the same):
 
 | File | Location |
@@ -56,11 +85,11 @@ Every sub is measured with [sep](https://github.com/kbarbary/sep): star count, F
 eccentricity and how consistent the elongation angle is, background level and noise, and the longest line-like
 object. Each sub is compared with the median of its group (same filter, exposure and binning).
 
-The `.analyze` file and guide log add context for each exposure window: guide RMS during the exposure, guide star
+The capture software's own records add context for each exposure window: guide RMS during the exposure, guide star
 losses, mount altitude and pier side, focuser temperature, autofocus runs and meridian flips. Ekos' own HFR per sub
-is shown next to the Nykteris value as a cross-check. Without the `.analyze` file the report falls back to FITS
-headers (altitude computed from coordinates, site and time; flips from `PIERSIDE`; focus from `FOCUSPOS` and
-`FOCUSTEM`).
+(or N.I.N.A.'s) is shown next to the Nykteris value as a cross-check. With nothing but the images, the report falls
+back to their headers (altitude computed from coordinates, site and time; flips from `PIERSIDE`; focus from
+`FOCUSPOS`/`FOCPOS` and `FOCUSTEM`/`FOCTEMP`).
 
 | Cause | Rule (defaults) |
 |---|---|
@@ -89,13 +118,18 @@ nykteris report ~/Pictures/M_33/Light --config my-rig.toml
 ## Testing without a sky
 
 `nykteris synth OUTDIR` writes a synthetic Ekos night: 100 FITS lights with the INDI header set, a matching
-`.analyze` file and an internal-guider guide log on one timeline, with faults injected on purpose (cloud passage,
+`.analyze` file and an internal-guider guide log on one timeline. `--flavor nina` writes the same night the way
+N.I.N.A. would: XISF lights with N.I.N.A.'s keywords, Session Metadata CSV and JSON, autofocus reports and a PHD2
+guide log. Both have with faults injected on purpose (cloud passage,
 guiding spike, seeing jump, focus drift with falling temperature, meridian flip, satellite trail, target sinking low).
 `truth.json` labels every sub, and the tests check that the report finds each fault.
 
 ```sh
 nykteris synth /tmp/fake-night
 nykteris report /tmp/fake-night/Light/L
+
+nykteris synth /tmp/fake-nina --flavor nina
+nykteris report /tmp/fake-nina/2026-11-18/LIGHT
 pytest
 ```
 
@@ -111,12 +145,23 @@ Pinned from the KStars and INDI sources:
   `AutofocusStarting/Complete/Aborted`, `MeridianFlipState`, `GuideState`. Unknown events are ignored.
 - Guide log (KStars `ekos/guide/internalguide/guidelog.cpp`, PHD2 log format 2.5): sections from `Guiding Begins at`
   to `Guiding Ends at`, local time, distances in guide camera pixels converted with the section's pixel scale.
+- N.I.N.A. headers (`NINA.Image/FileFormat/XISF/XISFHeader.cs` and its tests): the same keys in FITS and in XISF
+  `<FITSKeyword>` elements. `DATE-OBS`/`DATE-LOC` with seven fractional digits, `IMAGETYP = 'LIGHT'`, `XPIXSZ`
+  already includes binning, `PIERSIDE = 'East'/'West'`.
+- XISF 1.0: planar little-endian pixel data in an attachment block, optionally zlib, LZ4 or Zstandard compressed
+  with byte shuffling.
+- Session Metadata plugin (`SessionMetaDataWatcher.cs`): `ImageMetaData.csv`/`.json`, one record per image. Times
+  from `ExposureStartUTC`; `GuidingRMSArcSec` is 0 when no guiding was recorded and is then ignored.
+- N.I.N.A. autofocus reports (`NINA.WPF.Base/Utility/AutoFocus/AutoFocusReport.cs`): `Timestamp` with zone,
+  `Temperature`, `CalculatedFocusPoint.Position`.
+- PHD2 guide log: same layout as the Ekos internal guider plus an `ErrorDescription` column.
 - FITS (INDI `libs/indibase/indiccd.cpp`): `DATE-OBS` (UTC), `EXPTIME`, `FILTER`, `IMAGETYP`/`FRAME`, `SCALE` or
   `PIXSIZE1`+`FOCALLEN`, `RA`/`DEC` or `OBJCTRA`/`OBJCTDEC`, `SITELAT`/`SITELONG`, `PIERSIDE`, `OBJCTALT`,
   `FOCUSPOS`/`FOCUSTEM` (only when the focuser is snooped by the camera driver).
 
-The logs are in local time without a reliable zone. Nykteris derives the offset by matching `CaptureComplete`
-file names to FITS `DATE-OBS`; `--utc-offset` overrides it.
+Guide logs and the `.analyze` file are in local time without a reliable zone. Nykteris derives the offset by
+matching Ekos `CaptureComplete` file names to `DATE-OBS`, or from N.I.N.A.'s `DATE-LOC`, or from the Session
+Metadata start times. `--utc-offset` overrides it.
 
 ## Limits
 
@@ -124,6 +169,8 @@ file names to FITS `DATE-OBS`; `--utc-offset` overrides it.
 - Clouds at low altitude are reported as low altitude.
 - One-shot-colour subs are measured on a 2x2 super-pixel luminance image.
 - Satellite trails that cross dense star fields may be split by the detector and missed.
+- The N.I.N.A. side is built from N.I.N.A.'s source code and a synthetic night; it has not yet seen files from a real
+  N.I.N.A. session.
 
 ## License
 

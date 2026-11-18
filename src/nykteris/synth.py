@@ -22,6 +22,8 @@ from pathlib import Path
 import numpy as np
 from astropy.io import fits
 
+from . import xisf
+
 # Site and target. Generic central European site, M 33 in November.
 SITE_LAT = 50.11
 SITE_LON = 8.68
@@ -132,11 +134,18 @@ def _local(unix: float) -> datetime:
 
 
 def generate(outdir: str | Path, n_frames: int = 100, width: int = 512, height: int = 384,
-             n_stars: int = 700, seed: int = 1, plan: Plan = DEFAULT_PLAN) -> dict:
+             n_stars: int = 700, seed: int = 1, plan: Plan = DEFAULT_PLAN, flavor: str = "ekos",
+             image_format: str | None = None) -> dict:
+    """Write a synthetic night. ``flavor`` is "ekos" or "nina"."""
+    if flavor not in ("ekos", "nina"):
+        raise ValueError("flavor must be 'ekos' or 'nina'")
+    image_format = image_format or ("xisf" if flavor == "nina" else "fits")
     outdir = Path(outdir)
-    lights = outdir / "Light" / "L"
+    lights = outdir / "Light" / "L" if flavor == "ekos" else outdir / "2026-11-18" / "LIGHT"
     lights.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
+    af_events: list[tuple[float, float, float]] = []  # t_end, temperature, position
+    nina_rows: list[dict] = []
 
     # Place the first meridian flip after frame 14.
     cadence = EXPOSURE + DOWNLOAD + DITHER_SETTLE / DITHER_EVERY
@@ -174,6 +183,7 @@ def generate(outdir: str | Path, n_frames: int = 100, width: int = 512, height: 
     ev(session_start + 500, "AutofocusStarting", "L", f"{temp0:.1f}", 0, "")
     ev(session_start + 800, "AutofocusComplete", f"{temp0:.1f}", 0, "", "L", "31200|3.1|31250|2.6|31300|2.9", 0, "", "", "")
     focus_pos = 31250
+    af_events.append((session_start + 800, temp0, focus_pos))
 
     truth: dict = {}
     t = start
@@ -212,6 +222,7 @@ def generate(outdir: str | Path, n_frames: int = 100, width: int = 512, height: 
             ev(t + 240, "AutofocusComplete", f"{current_temp:.1f}", 3, "", "L", "31260|3.4|31310|2.6|31360|3.0", 0, "", "", "")
             af_temp = current_temp
             focus_pos = 31310
+            af_events.append((t + 240, current_temp, focus_pos))
             t += 250
 
         if i > 0 and i % DITHER_EVERY == 0:
@@ -317,27 +328,75 @@ def generate(outdir: str | Path, n_frames: int = 100, width: int = 512, height: 
             guide_rows.append((tg, ra, dec, snr, dropped))
 
         local = _local(t0)
-        name = f"M_33_Light_L_{int(EXPOSURE)}_secs_{local:%Y-%m-%dT%H-%M-%S}_{i + 1:03d}.fits"
-        date_obs = datetime.fromtimestamp(t0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
-        hdr = fits.Header()
-        for key, val in [
-            ("ROWORDER", "TOP-DOWN"), ("INSTRUME", "CCD Simulator"), ("TELESCOP", "Telescope Simulator"),
-            ("OBSERVER", "Unknown"), ("OBJECT", TARGET), ("EXPTIME", EXPOSURE), ("DARKTIME", EXPOSURE),
-            ("CCD-TEMP", -10.0), ("PIXSIZE1", PIX_UM), ("PIXSIZE2", PIX_UM), ("XBINNING", 1),
-            ("YBINNING", 1), ("XPIXSZ", PIX_UM), ("YPIXSZ", PIX_UM), ("FRAME", "Light"),
-            ("IMAGETYP", "Light Frame"), ("FILTER", "L"), ("GAIN", 100.0), ("OFFSET", 30.0),
-            ("FOCALLEN", FOCAL_MM), ("APTDIA", 160.0), ("FOCUSPOS", focus_pos),
-            ("FOCUSTEM", round(current_temp, 2)), ("SCALE", round(SCALE, 6)), ("SITELAT", SITE_LAT),
-            ("SITELONG", SITE_LON), ("AIRMASS", round(airmass(altaz(t0)[0]), 4)),
-            ("OBJCTRA", _sexa(TARGET_RA / 15.0)), ("OBJCTDEC", _sexa(TARGET_DEC)),
-            ("RA", TARGET_RA), ("DEC", TARGET_DEC), ("OBJCTALT", round(altaz(t0)[0], 4)),
-            ("OBJCTAZ", round(altaz(t0)[1], 4)), ("PIERSIDE", "WEST" if pier == 0 else "EAST"),
-            ("EQUINOX", 2000), ("DATE-OBS", date_obs),
-        ]:
-            hdr[key] = val
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
-            fits.PrimaryHDU(img, header=hdr).writeto(lights / name, overwrite=True)
+        alt0, az0 = altaz(t0)
+        if flavor == "ekos":
+            name = f"M_33_Light_L_{int(EXPOSURE)}_secs_{local:%Y-%m-%dT%H-%M-%S}_{i + 1:03d}.{image_format}"
+            date_obs = datetime.fromtimestamp(t0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3]
+            cards = [
+                ("ROWORDER", "TOP-DOWN"), ("INSTRUME", "CCD Simulator"), ("TELESCOP", "Telescope Simulator"),
+                ("OBSERVER", "Unknown"), ("OBJECT", TARGET), ("EXPTIME", EXPOSURE), ("DARKTIME", EXPOSURE),
+                ("CCD-TEMP", -10.0), ("PIXSIZE1", PIX_UM), ("PIXSIZE2", PIX_UM), ("XBINNING", 1),
+                ("YBINNING", 1), ("XPIXSZ", PIX_UM), ("YPIXSZ", PIX_UM), ("FRAME", "Light"),
+                ("IMAGETYP", "Light Frame"), ("FILTER", "L"), ("GAIN", 100.0), ("OFFSET", 30.0),
+                ("FOCALLEN", FOCAL_MM), ("APTDIA", 160.0), ("FOCUSPOS", focus_pos),
+                ("FOCUSTEM", round(current_temp, 2)), ("SCALE", round(SCALE, 6)), ("SITELAT", SITE_LAT),
+                ("SITELONG", SITE_LON), ("AIRMASS", round(airmass(alt0), 4)),
+                ("OBJCTRA", _sexa(TARGET_RA / 15.0)), ("OBJCTDEC", _sexa(TARGET_DEC)),
+                ("RA", TARGET_RA), ("DEC", TARGET_DEC), ("OBJCTALT", round(alt0, 4)),
+                ("OBJCTAZ", round(az0, 4)), ("PIERSIDE", "WEST" if pier == 0 else "EAST"),
+                ("EQUINOX", 2000), ("DATE-OBS", date_obs),
+            ]
+        else:
+            name = f"{local:%Y-%m-%d_%H-%M-%S}_L_-10.00_{EXPOSURE:.2f}s_{i:04d}.{image_format}"
+            utc = datetime.fromtimestamp(t0, tz=timezone.utc)
+            cards = [
+                ("IMAGETYP", "LIGHT"), ("EXPOSURE", EXPOSURE), ("EXPTIME", EXPOSURE),
+                ("DATE-LOC", local.strftime("%Y-%m-%dT%H:%M:%S.%f") + "0"),
+                ("DATE-OBS", utc.strftime("%Y-%m-%dT%H:%M:%S.%f") + "0"),
+                ("XBINNING", 1), ("YBINNING", 1), ("GAIN", 100), ("OFFSET", 30), ("EGAIN", 1.0),
+                ("XPIXSZ", PIX_UM), ("YPIXSZ", PIX_UM), ("INSTRUME", "Camera Simulator"),
+                ("SET-TEMP", -10.0), ("CCD-TEMP", -10.0), ("TELESCOP", "Telescope Simulator"),
+                ("FOCALLEN", FOCAL_MM), ("FOCRATIO", 5.0), ("RA", TARGET_RA), ("DEC", TARGET_DEC),
+                ("CENTALT", round(alt0, 4)), ("CENTAZ", round(az0, 4)), ("AIRMASS", round(airmass(alt0), 4)),
+                ("PIERSIDE", "West" if pier == 0 else "East"), ("SITEELEV", 120.0),
+                ("SITELAT", SITE_LAT), ("SITELONG", SITE_LON), ("OBJECT", TARGET),
+                ("OBJCTRA", _sexa(TARGET_RA / 15.0)), ("OBJCTDEC", _sexa(TARGET_DEC)),
+                ("FOCNAME", "Focuser Simulator"), ("FOCPOS", focus_pos), ("FOCUSPOS", focus_pos),
+                ("FOCTEMP", round(current_temp, 2)), ("FOCUSTEM", round(current_temp, 2)),
+                ("FWHEEL", "Filter Wheel Simulator"), ("FILTER", "L"), ("ROWORDER", "TOP-DOWN"),
+                ("EQUINOX", 2000.0), ("SWCREATE", "N.I.N.A. 3.1.2.9001 (x64)"),
+            ]
+        if image_format == "xisf":
+            xisf.write(lights / name, img, [(k, v, "") for k, v in cards])
+        else:
+            hdr = fits.Header()
+            for key, val in cards:
+                hdr[key] = val
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                fits.PrimaryHDU(img, header=hdr).writeto(lights / name, overwrite=True)
+
+        if flavor == "nina":
+            win = [r for r in guide_rows if t0 <= r[0] <= t1 and not r[4]]
+            g_ra = float(np.std([r[1] for r in win])) if len(win) > 2 else 0.0
+            g_dec = float(np.std([r[2] for r in win])) if len(win) > 2 else 0.0
+            nina_hfr = fwhm_arcsec / SCALE / 2.0 * (1 + 0.15 * trail_len / 7) * math.exp(rng.normal(0, 0.03))
+            nina_rows.append({
+                "ExposureNumber": i, "FilePath": "C:\\Users\\astro\\Documents\\N.I.N.A\\2026-11-18\\LIGHT\\" + name,
+                "FilterName": "L", "ExposureStart": local.strftime("%Y-%m-%d %H:%M"), "Duration": EXPOSURE,
+                "Binning": "1x1", "CameraTemp": -10.0, "CameraTargetTemp": -10.0, "Gain": 100, "Offset": 30,
+                "ADUStDev": 40.0, "ADUMean": round(sky + 300, 1), "ADUMedian": round(sky + 290, 1), "ADUMin": 250,
+                "ADUMax": 65535, "DetectedStars": int(180 * transmission), "HFR": round(nina_hfr, 4),
+                "HFRStDev": 0.3, "FWHM": "NaN", "Eccentricity": "NaN",
+                "GuidingRMS": round(math.hypot(g_ra, g_dec) / GUIDE_SCALE, 4),
+                "GuidingRMSArcSec": round(math.hypot(g_ra, g_dec), 4),
+                "GuidingRMSRA": round(g_ra / GUIDE_SCALE, 4), "GuidingRMSRAArcSec": round(g_ra, 4),
+                "GuidingRMSDEC": round(g_dec / GUIDE_SCALE, 4), "GuidingRMSDECArcSec": round(g_dec, 4),
+                "FocuserPosition": focus_pos, "FocuserTemp": round(current_temp, 2), "RotatorPosition": 0,
+                "PierSide": "West" if pier == 0 else "East", "Airmass": round(airmass(alt0), 4),
+                "ExposureStartUTC": datetime.fromtimestamp(t0, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f") + "0Z",
+                "MountRA": TARGET_RA, "MountDec": TARGET_DEC, "ImageType": "LIGHT",
+            })
 
         # Ekos' own view of the frame.
         ev(t0, "CaptureStarting", f"{EXPOSURE:.3f}", "L", "CCD Simulator")
@@ -358,36 +417,72 @@ def generate(outdir: str | Path, n_frames: int = 100, width: int = 512, height: 
     ev(t + 20, "MountState", "Parking")
     ev(t + 80, "MountState", "Parked")
 
-    # Write .analyze
+    out = {"lights": lights, "truth": truth}
+    rows = sorted(guide_rows, key=lambda r: r[0])
+    if flavor == "ekos":
+        out["analyze"] = _write_analyze(outdir, session_start, analyze, guide_rows)
+        out["guide_log"] = _write_guide_log(
+            outdir / f"guide_log-{_local(session_start + 150):%Y-%m-%dT%H-%M-%S}.txt",
+            f"KStars version 3.8.0. PHD2 log version 2.5. Log enabled at {_local(session_start + 150):%Y-%m-%d %H:%M:%S}",
+            rows, guide_sections, dithers, t, phd2=False)
+    else:
+        out["guide_log"] = _write_guide_log(
+            outdir / f"PHD2_GuideLog_{_local(session_start + 150):%Y-%m-%d_%H%M%S}.txt",
+            f"PHD2 version 2.6.13, Log version 2.5. Log enabled at {_local(session_start + 150):%Y-%m-%d %H:%M:%S}",
+            rows, guide_sections, dithers, t, phd2=True)
+        out["nina_metadata"] = _write_nina_metadata(lights, nina_rows)
+        out["af_reports"] = _write_af_reports(outdir / "AutoFocus", af_events)
+
+    meta = {
+        "generator": "nykteris.synth",
+        "flavor": flavor,
+        "image_format": image_format,
+        "seed": seed,
+        "site": {"lat": SITE_LAT, "lon": SITE_LON, "tz_hours": TZ_HOURS},
+        "target": TARGET,
+        "scale_arcsec_px": SCALE,
+        "lights": str(lights.relative_to(outdir)),
+        "alt_range": [round(min(alts), 1), round(max(alts), 1)],
+    }
+    (outdir / "truth.json").write_text(json.dumps({"meta": meta, "frames": truth}, indent=1))
+    out["meta"] = meta
+    return out
+
+
+def _write_analyze(outdir: Path, session_start: float, analyze, guide_rows) -> Path:
     stamp = _local(session_start)
-    analyze_path = outdir / f"ekos-{stamp:%Y-%m-%dT%H-%M-%S}.analyze"
-    analyze.sort(key=lambda x: x[0])
-    with open(analyze_path, "w") as fh:
+    path = outdir / f"ekos-{stamp:%Y-%m-%dT%H-%M-%S}.analyze"
+    with open(path, "w") as fh:
         fh.write("#KStars version 3.8.0. Analyze log version 2.0.\n\n")
         fh.write(f"AnalyzeStartTime,{stamp:%Y-%m-%d %H:%M:%S}.000,CET\n")
-        # Guide stats interleaved in time order.
         guide_lines = [(r[0], "GuideStats,{:.3f},{:.3f},{:.3f},{},{},{:.3f},{:.3f},{}".format(
             r[0] - session_start, r[1], r[2], int(abs(r[1]) * 80), int(abs(r[2]) * 80), r[3], 120.0, 1))
             for r in guide_rows if not r[4]]
-        merged = sorted(analyze + guide_lines, key=lambda x: x[0])
-        for _, line in merged:
+        for _, line in sorted(analyze + guide_lines, key=lambda x: x[0]):
             fh.write(line + "\n")
+    return path
 
-    # Write the guide log in the Ekos internal guider's PHD2 format.
-    guide_path = outdir / f"guide_log-{_local(session_start + 150):%Y-%m-%dT%H-%M-%S}.txt"
-    rows = sorted(guide_rows, key=lambda r: r[0])
-    with open(guide_path, "w") as fh:
-        fh.write(f"KStars version 3.8.0. PHD2 log version 2.5. Log enabled at {_local(session_start + 150):%Y-%m-%d %H:%M:%S}\n\n")
+
+def _write_guide_log(path: Path, first_line: str, rows, sections, dithers, t_end: float, phd2: bool) -> Path:
+    """Ekos internal guider or PHD2 log. PHD2 adds an ErrorDescription column."""
+    cols = ("Frame,Time,mount,dx,dy,RARawDistance,DECRawDistance,RAGuideDistance,DECGuideDistance,"
+            "RADuration,RADirection,DECDuration,DECDirection,XStep,YStep,StarMass,SNR,ErrorCode")
+    if phd2:
+        cols += ",ErrorDescription"
+    with open(path, "w") as fh:
+        fh.write(first_line + "\n\n")
         di = 0
-        for a, b in guide_sections:
+        for a, b in sections:
             begin = math.floor(a)
             fh.write(f"Guiding Begins at {_local(begin):%Y-%m-%d %H:%M:%S}\n")
+            if phd2:
+                fh.write("Dither = both axes, Dither scale = 1.000, Image noise reduction = none, "
+                         "Guide-frame time lapse = 0, Server enabled\n")
             fh.write(f"Pixel scale = {GUIDE_SCALE:.2f} arc-sec/px, Binning = 1, Focal length = 200 mm\n")
             fh.write(f"RA = {TARGET_RA / 15:.2f} hr, Dec = {TARGET_DEC:.1f} deg, Hour angle = N/A hr, Pier side = West, "
                      "Rotator pos = N/A, Alt = 50.0 deg, Az = 120.0 deg\n")
             fh.write("Mount = mount, xAngle = 90.0, xRate = 7.500, yAngle = 0.0, yRate = 7.500\n")
-            fh.write("Frame,Time,mount,dx,dy,RARawDistance,DECRawDistance,RAGuideDistance,DECGuideDistance,"
-                     "RADuration,RADirection,DECDuration,DECDirection,XStep,YStep,StarMass,SNR,ErrorCode\n")
+            fh.write(cols + "\n")
             n = 1
             for r in rows:
                 if not (a <= r[0] < b):
@@ -398,28 +493,48 @@ def generate(outdir: str | Path, n_frames: int = 100, width: int = 512, height: 
                     di += 1
                 ra_px, dec_px = r[1] / GUIDE_SCALE, r[2] / GUIDE_SCALE
                 if r[4]:
-                    fh.write(f'{n},{r[0] - begin:.3f},"DROP",,,,,,,0,,0,,,,0,{r[3]:.2f},1\n')
+                    tail = ',"Star lost - low SNR"' if phd2 else ""
+                    fh.write(f'{n},{r[0] - begin:.3f},"DROP",,,,,,,0,,0,,,,0,{r[3]:.2f},{2 if phd2 else 1}{tail}\n')
                 else:
                     fh.write(f'{n},{r[0] - begin:.3f},"Mount",{ra_px:.3f},{dec_px:.3f},{ra_px:.3f},{dec_px:.3f},'
                              f'{-0.7 * ra_px:.3f},{-0.7 * dec_px:.3f},{int(abs(ra_px) * 300)},{"W" if ra_px < 0 else "E"},'
-                             f'{int(abs(dec_px) * 300)},{"N" if dec_px < 0 else "S"},,,{int(r[3] * 120)},{r[3]:.2f},0\n')
+                             f'{int(abs(dec_px) * 300)},{"N" if dec_px < 0 else "S"},,,{int(r[3] * 120)},{r[3]:.2f},0'
+                             + (',""' if phd2 else "") + "\n")
                 n += 1
             fh.write(f"Guiding Ends at {_local(b):%Y-%m-%d %H:%M:%S}\n\n")
-        fh.write(f"Log closed at {_local(t + 100):%Y-%m-%d %H:%M:%S}\n")
+        fh.write(f"Log closed at {_local(t_end + 100):%Y-%m-%d %H:%M:%S}\n")
+    return path
 
-    meta = {
-        "generator": "nykteris.synth",
-        "seed": seed,
-        "site": {"lat": SITE_LAT, "lon": SITE_LON, "tz_hours": TZ_HOURS},
-        "target": TARGET,
-        "scale_arcsec_px": SCALE,
-        "lights": str(lights.relative_to(outdir)),
-        "analyze": analyze_path.name,
-        "guide_log": guide_path.name,
-        "alt_range": [round(min(alts), 1), round(max(alts), 1)],
-    }
-    (outdir / "truth.json").write_text(json.dumps({"meta": meta, "frames": truth}, indent=1))
-    return {"lights": lights, "analyze": analyze_path, "guide_log": guide_path, "truth": truth, "meta": meta}
+
+def _write_nina_metadata(folder: Path, rows: list[dict]) -> Path:
+    """ImageMetaData.csv and .json, as the Session Metadata plugin writes them."""
+    import csv
+
+    with open(folder / "ImageMetaData.csv", "w", newline="") as fh:
+        w = csv.DictWriter(fh, fieldnames=list(rows[0]))
+        w.writeheader()
+        w.writerows(rows)
+    js = [{k: (float("nan") if v == "NaN" else v) for k, v in r.items()} for r in rows]
+    (folder / "ImageMetaData.json").write_text(json.dumps(js, indent=2))
+    return folder / "ImageMetaData.json"
+
+
+def _write_af_reports(folder: Path, events) -> Path:
+    folder.mkdir(parents=True, exist_ok=True)
+    for t_end, temp, pos in events:
+        local = _local(t_end)
+        report = {
+            "Version": 2, "Filter": "L", "AutoFocuserName": "NINA", "StarDetectorName": "NINA",
+            "Timestamp": local.strftime("%Y-%m-%dT%H:%M:%S.%f") + f"0+{TZ_HOURS:02d}:00",
+            "Temperature": round(temp, 2), "Method": "STARHFR", "Fitting": "HYPERBOLIC",
+            "InitialFocusPoint": {"Position": pos - 40, "Value": 3.1, "Error": 0.1},
+            "CalculatedFocusPoint": {"Position": pos, "Value": 2.6, "Error": 0.0},
+            "PreviousFocusPoint": {"Position": pos - 60, "Value": 0.0, "Error": 0.0},
+            "MeasurePoints": [{"Position": pos + d, "Value": 2.6 + abs(d) / 60, "Error": 0.1} for d in (-90, -45, 0, 45, 90)],
+            "Duration": "00:04:00",
+        }
+        (folder / f"{local:%Y-%m-%d--%H-%M-%S}.json").write_text(json.dumps(report, indent=2))
+    return folder
 
 
 def _sexa(v: float) -> str:
