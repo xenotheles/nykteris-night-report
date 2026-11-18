@@ -197,6 +197,13 @@ The thresholds were set on synthetic data. If you have a night (good or bad) fro
 share, please open a [sample night issue](https://github.com/xenotheles/nykteris-night-report/issues/new?template=sample-night.yml).
 Reports where Nykteris blamed the wrong cause are just as useful.
 
+## How it was built
+
+Nykteris was built with AI. An AI assistant wrote the code, tests and documentation; a human set the direction,
+reviewed the work and decided what goes in and what gets released. The diagnosis itself uses no AI at runtime: the
+explanations in the report are fixed rules filled in with measured numbers. Reports from real nights, especially where
+Nykteris gets it wrong, are the best way to find what the synthetic tests missed.
+
 ## License
 
 MIT
