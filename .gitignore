@@ -1,0 +1,11 @@
+__pycache__/
+*.egg-info/
+.pytest_cache/
+build/
+dist/
+.venv/
+/night/
+/synthetic-night*/
+*.html
+!src/nykteris/templates/*
+.nykteris-cache.json
