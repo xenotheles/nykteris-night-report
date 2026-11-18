@@ -1,0 +1,135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nykteris night report {{ date }}</title>
+<style>
+:root {
+  --bg: #fbfbfa; --fg: #1d232b; --muted: #5d6673; --line: #e2e4e8; --card: #ffffff;
+  --reject: #c92a2a; --check: #b77a00; --ok: #2b8a3e;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --bg: #13161b; --fg: #e6e8eb; --muted: #9aa3af; --line: #2a2f37; --card: #1a1e24;
+          --reject: #ff6b6b; --check: #ffc145; --ok: #69db7c; }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--fg);
+       font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+main { max-width: 1040px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.6rem; margin: 0 0 4px; }
+h2 { font-size: 1.15rem; margin: 36px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 6px; }
+.sub { color: var(--muted); margin: 0 0 20px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.stat { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
+.stat b { display: block; font-size: 1.35rem; }
+.stat span { color: var(--muted); font-size: .85rem; }
+.finding { background: var(--card); border: 1px solid var(--line); border-left: 4px solid; border-radius: 6px;
+           padding: 10px 14px; margin: 10px 0; }
+.finding h3 { margin: 0 0 4px; font-size: 1rem; }
+.finding p { margin: 4px 0; }
+.finding .ex { color: var(--muted); font-size: .9rem; }
+.chart { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 8px; overflow-x: auto; }
+.chart svg { width: 100%; height: auto; min-width: 640px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 8px 0 0; font-size: .85rem; color: var(--muted); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+.tablewrap { overflow-x: auto; }
+table { border-collapse: collapse; width: 100%; font-size: .85rem; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.file { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; word-break: break-all; }
+.v-reject { color: var(--reject); font-weight: 600; }
+.v-check { color: var(--check); font-weight: 600; }
+.v-ok { color: var(--ok); }
+details summary { cursor: pointer; color: var(--muted); margin: 8px 0; }
+.muted { color: var(--muted); }
+code { font-size: .85em; }
+ul.notes li { margin: 4px 0; }
+footer { margin-top: 48px; color: var(--muted); font-size: .8rem; }
+</style>
+</head>
+<body>
+<main>
+<h1>Night report{% if objects %}: {{ objects | join(", ") }}{% endif %}</h1>
+<p class="sub">{{ date }}, {{ start }} to {{ end }} local time (UTC{{ "%+g" | format(utc_offset) }}). Filters: {{ filters }}.</p>
+
+<div class="stats">
+  <div class="stat"><b>{{ n_frames }}</b><span>subs</span></div>
+  <div class="stat"><b class="v-reject">{{ n_reject }}</b><span>flagged to reject</span></div>
+  <div class="stat"><b class="v-check">{{ n_check }}</b><span>worth a look</span></div>
+  <div class="stat"><b>{{ "%.1f" | format(kept_h) }} h</b><span>usable of {{ "%.1f" | format(total_h) }} h</span></div>
+  <div class="stat"><b>{{ n_autofocus }} / {{ n_flips }}</b><span>autofocus runs / flips</span></div>
+</div>
+
+<h2>What went wrong</h2>
+{% if findings %}
+{% for f in findings %}
+<div class="finding" style="border-left-color: {{ f.color }}">
+  <h3>{{ f.label }}: {{ f.count }} sub{{ "s" if f.count != 1 }} ({{ f.span }})</h3>
+  <p class="ex">Example: {{ f.example }}</p>
+  <p>{{ f.advice }}</p>
+</div>
+{% endfor %}
+{% else %}
+<p>No sub was flagged. A clean night.</p>
+{% endif %}
+
+<h2>Timeline</h2>
+<div class="chart">{{ svg | safe }}</div>
+<div class="legend">
+  {% for key, label, color in legend %}<span><span class="dot" style="background: {{ color }}"></span>{{ label }}</span>{% endfor %}
+  <span>dotted line: autofocus</span><span>dashed line: meridian flip</span>
+</div>
+
+<h2>Flagged subs</h2>
+{% if flagged %}
+<div class="tablewrap"><table>
+<tr><th>#</th><th>Time</th><th>File</th><th>Verdict</th><th>Why</th></tr>
+{% for r in flagged %}
+<tr>
+  <td class="num">{{ r.n }}</td><td class="num">{{ r.time }}</td><td class="file">{{ r.name }}</td>
+  <td class="v-{{ r.verdict }}">{{ r.verdict }}</td>
+  <td>{% for c in r.causes %}<div><span class="dot" style="background: {{ c.color }}"></span><b>{{ c.label }}</b> <span class="muted">({{ c.confidence }})</span>: {{ c.text }}</div>{% endfor %}</td>
+</tr>
+{% endfor %}
+</table></div>
+{% else %}
+<p class="muted">None.</p>
+{% endif %}
+
+<h2>All subs</h2>
+<details>
+<summary>Show all {{ n_frames }} subs with their measurements</summary>
+<div class="tablewrap"><table>
+<tr><th>#</th><th>Time</th><th>Filter</th><th>Exp</th><th>Stars</th><th>FWHM "</th><th>FWHM px</th><th>Ecc</th><th>Bkg</th><th>Guide RMS "</th><th>Alt</th><th>Temp</th><th>Ekos HFR</th><th>Verdict</th></tr>
+{% for r in rows %}
+<tr>
+  <td class="num">{{ r.n }}</td><td class="num">{{ r.time }}</td><td>{{ r.filter }}</td><td class="num">{{ r.exp }}</td>
+  <td class="num">{{ r.stars }}</td><td class="num">{{ r.fwhm }}</td><td class="num">{{ r.fwhm_px }}</td><td class="num">{{ r.ecc }}</td>
+  <td class="num">{{ r.bg }}</td><td class="num">{{ r.guide }}</td><td class="num">{{ r.alt }}</td><td class="num">{{ r.temp }}</td>
+  <td class="num">{{ r.ekos_hfr }}</td>
+  <td class="v-{{ r.verdict }}"><span class="dot" style="background: {{ r.color }}"></span>{{ r.verdict }}{% if r.verdict != "ok" %}: {{ r.cause }}{% endif %}</td>
+</tr>
+{% endfor %}
+</table></div>
+</details>
+
+<h2>Inputs and method</h2>
+<ul class="notes">
+  <li>Lights: <code>{{ inputs.lights }}</code></li>
+  <li>Ekos .analyze: {% if inputs.analyze %}{% for p in inputs.analyze %}<code>{{ p }}</code> {% endfor %}{% else %}<span class="muted">none (FITS headers only)</span>{% endif %}</li>
+  <li>Guide log: {% if inputs.guide %}{% for p in inputs.guide %}<code>{{ p }}</code> {% endfor %}{% else %}<span class="muted">none</span>{% endif %}{% if guide_source %} (guide RMS taken from the {{ guide_source }}){% endif %}</li>
+  <li>Local time offset: UTC{{ "%+g" | format(utc_offset) }}, {{ offset_source }}.</li>
+  <li>Each sub is compared with the median of its group (same filter, exposure and binning). FWHM is twice the median half-flux radius. Eccentricity is only judged when FWHM is at least {{ thresholds.eccentricity_min_fwhm_px }} px, because undersampled stars look elongated on good nights.</li>
+  <li>Thresholds are provisional. Override them with <code>--config</code>; print the defaults with <code>nykteris thresholds</code>.</li>
+  {% for n in notes %}<li>{{ n }}</li>{% endfor %}
+</ul>
+<details><summary>Thresholds used</summary>
+<div class="tablewrap"><table>{% for k, v in thresholds.items() %}<tr><td><code>{{ k }}</code></td><td class="num">{{ v }}</td></tr>{% endfor %}</table></div>
+</details>
+
+<footer>Generated by Nykteris {{ version }} on {{ generated }}.</footer>
+</main>
+</body>
+</html>
