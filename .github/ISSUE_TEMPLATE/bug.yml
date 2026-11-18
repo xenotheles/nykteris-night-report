@@ -1,0 +1,36 @@
+name: Bug or wrong verdict
+description: Nykteris crashed, could not read a file, or blamed the wrong cause.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: The command you ran and what went wrong. Paste the error message if there was one.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Nykteris version
+      description: Output of `nykteris --version`
+    validations:
+      required: true
+  - type: dropdown
+    id: software
+    attributes:
+      label: Capture software
+      options: ["Ekos/KStars", "N.I.N.A.", "Other"]
+  - type: input
+    id: os
+    attributes:
+      label: Operating system and Python version
+  - type: textarea
+    id: headers
+    attributes:
+      label: Header of one sub
+      description: |
+        Helps with "could not read" problems. In Python:
+        `from astropy.io import fits; print(repr(fits.getheader("sub.fits")))`
+        For XISF, open the file in a text editor and copy the XML at the top.
+      render: text
