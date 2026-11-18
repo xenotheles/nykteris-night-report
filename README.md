@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/logo/nykteris-logo-dark.svg">
+    <img src="docs/logo/nykteris-logo.svg" alt="Nykteris" width="420">
+  </picture>
+</p>
+
 # Nykteris
 
 A night report for astrophotography sessions captured with Ekos/KStars or N.I.N.A. Point it at a night's lights
@@ -5,6 +12,10 @@ folder (FITS or XISF). It picks up what the capture software recorded next to th
 N.I.N.A.'s Session Metadata files and autofocus reports, plus the guide log (PHD2 or the Ekos internal guider). It
 writes one HTML page that flags bad subs and gives a likely cause for each: clouds, guiding, seeing, focus drift,
 low altitude, trails or the meridian flip. It runs on Linux, macOS and Windows.
+
+![Example report from the synthetic test night](https://raw.githubusercontent.com/xenotheles/nykteris-night-report/main/docs/report-example.png)
+
+*The example above is the synthetic test night that ships with Nykteris (`nykteris synth`), not a real sky.*
 
 It does not stack, weight or delete anything. Culling tools already exist (Siril, ASTAP, PixInsight); Nykteris is
 about explaining *why* subs went bad, using what Ekos already records.
@@ -14,10 +25,18 @@ about explaining *why* subs went bad, using what Ekos already records.
 Python 3.10 or newer, on Linux, macOS or Windows.
 
 ```sh
+pipx install "nykteris[xisf]"
+```
+
+Until the first release is on PyPI, install from GitHub instead:
+
+```sh
 pipx install "nykteris[xisf] @ git+https://github.com/xenotheles/nykteris-night-report"
 # or, from a clone:
 pip install -e ".[test,xisf]"
 ```
+
+No `pipx`? `python -m pip install --user pipx` and `python -m pipx ensurepath`, then open a new terminal.
 
 The `xisf` extra adds LZ4 and Zstandard for compressed XISF files. Uncompressed and zlib-compressed XISF work without it.
 
@@ -171,6 +190,12 @@ Metadata start times. `--utc-offset` overrides it.
 - Satellite trails that cross dense star fields may be split by the detector and missed.
 - The N.I.N.A. side is built from N.I.N.A.'s source code and a synthetic night; it has not yet seen files from a real
   N.I.N.A. session.
+
+## Help wanted: real nights
+
+The thresholds were set on synthetic data. If you have a night (good or bad) from Ekos or N.I.N.A. that you can
+share, please open a [sample night issue](https://github.com/xenotheles/nykteris-night-report/issues/new?template=sample-night.yml).
+Reports where Nykteris blamed the wrong cause are just as useful.
 
 ## License
 

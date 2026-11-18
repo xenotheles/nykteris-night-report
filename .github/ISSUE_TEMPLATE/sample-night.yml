@@ -1,0 +1,47 @@
+name: Share a night
+description: Offer a night's data so the thresholds can be tuned on real skies.
+title: "Sample night: "
+labels: ["sample-night"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you. Real nights are what make the thresholds trustworthy. A night with a few known problems
+        (a cloud passing, a guiding hiccup, focus drift) is the most useful.
+        Please do not attach the subs here; give a link to a download (cloud drive or similar) instead.
+  - type: dropdown
+    id: software
+    attributes:
+      label: Capture software
+      options: ["Ekos/KStars", "N.I.N.A.", "Other"]
+    validations:
+      required: true
+  - type: input
+    id: link
+    attributes:
+      label: Download link
+      description: Lights folder plus the .analyze file or NINA ImageMetaData file, and the guide log if you have it.
+    validations:
+      required: true
+  - type: textarea
+    id: rig
+    attributes:
+      label: Rig
+      description: Telescope, camera, mount, guiding setup. Roughly is fine.
+  - type: textarea
+    id: known
+    attributes:
+      label: What you know went wrong
+      description: Which subs you consider bad and why, if you know. This is the ground truth Nykteris is checked against.
+  - type: textarea
+    id: report
+    attributes:
+      label: What Nykteris said
+      description: Optional. Attach or paste the CSV, or describe where you disagree with the report.
+  - type: checkboxes
+    id: consent
+    attributes:
+      label: Use of the data
+      options:
+        - label: The data may be used to test and tune Nykteris. It will not be redistributed.
+          required: true
